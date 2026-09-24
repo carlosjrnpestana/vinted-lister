@@ -3,7 +3,6 @@ import fs from "fs";
 import { pipeline } from "stream/promises";
 
 async function main() {
-  // 1. Initialize Stagehand for local GitHub Actions execution
   const stagehand = new Stagehand({
     env: "LOCAL", 
     model: {
@@ -14,55 +13,52 @@ async function main() {
 
   await stagehand.init();
   const page = stagehand.context.pages()[0];
-  const imagePath = "./temp-vinted-photo.jpg";
+  
+  // Split the comma-separated string from the webhook into an array
+  const imageUrls = (process.env.IMAGE_URLS || "").split(",").map(url => url.trim());
+  const downloadedPaths: string[] = [];
 
   try {
-    // 2. Download the image from the webhook payload URL
-    console.log("Downloading image...");
-    const response = await fetch(process.env.IMAGE_URL as string);
-    if (!response.ok) throw new Error("Failed to fetch image");
-    
-    // Save it temporarily to the GitHub Actions server drive
-    await pipeline(response.body as any, fs.createWriteStream(imagePath));
-
-    // 3. Inject your Vinted cookies to bypass login
-    console.log("Injecting cookies...");
-    const cookies = JSON.parse(process.env.VINTED_COOKIES as string);
-    await page.context().addCookies(cookies);
-
-    // 4. Navigate directly to the new listing page
-    console.log("Navigating to Vinted...");
-    await page.goto("https://www.vinted.com/items/new");
-
-    // 5. Bypass AI to securely upload the image using native Playwright
-    console.log("Uploading photo via Playwright...");
-    const fileInput = await page.$('input[type="file"]');
-    if (fileInput) {
-      await fileInput.setInputFiles(imagePath);
-      await page.waitForTimeout(4000); // Wait for Vinted UI to process the image
-    } else {
-      console.log("Error: Could not find the file upload input.");
+    console.log("Downloading images...");
+    for (let i = 0; i < imageUrls.length; i++) {
+      if (!imageUrls[i]) continue;
+      const path = `./temp-photo-${i}.jpg`;
+      const response = await fetch(imageUrls[i]);
+      if (!response.ok) throw new Error(`Failed to fetch image ${i}`);
+      await pipeline(response.body as any, fs.createWriteStream(path));
+      downloadedPaths.push(path);
     }
 
-    // 6. Hand control to Gemini to fill the text fields dynamically
+    console.log("Injecting cookies & navigating...");
+    const cookies = JSON.parse(process.env.VINTED_COOKIES as string);
+    await page.context().addCookies(cookies);
+    await page.goto("https://www.vinted.com/items/new");
+
+    console.log("Uploading multiple photos via Playwright...");
+    const fileInput = await page.$('input[type="file"]');
+    if (fileInput) {
+      // Playwright natively accepts an array of paths for multiple uploads
+      await fileInput.setInputFiles(downloadedPaths);
+      await page.waitForTimeout(5000); 
+    }
+
     console.log("Filling form details via Gemini...");
     await stagehand.act(`Fill in the listing title with: ${process.env.ITEM_TITLE}`);
     await stagehand.act(`Fill the description box with: ${process.env.ITEM_DESC}`);
     await stagehand.act(`Set the brand to: ${process.env.ITEM_BRAND}`);
     await stagehand.act(`Enter the price as: ${process.env.ITEM_PRICE}`);
     
-    // Optional: Uncomment this to auto-publish once you verify it works reliably
-    // await stagehand.act("Click the final 'Upload' or 'Publish' button");
-
+    // Instruct Stagehand to navigate the multi-layer category dropdown
+    await stagehand.act(`Click the category selector and navigate through this exact category path to select the final option: ${process.env.ITEM_CATEGORY}`);
+    
     console.log("Success! Listing drafted.");
-
   } catch (error) {
     console.error("Script failed:", error);
   } finally {
-    // 7. Clean up the server environment
-    if (fs.existsSync(imagePath)) {
-        fs.unlinkSync(imagePath);
-    }
+    // Clean up all temporary images
+    downloadedPaths.forEach(path => {
+      if (fs.existsSync(path)) fs.unlinkSync(path);
+    });
     await stagehand.close();
   }
 }
