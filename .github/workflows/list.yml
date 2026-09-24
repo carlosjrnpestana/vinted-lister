@@ -10,6 +10,10 @@ on:
         description: 'Description'
         required: true
         type: string
+      category:
+        description: 'Category path (e.g., Women > Clothing > Coats)'
+        required: true
+        type: string
       price:
         description: 'Price'
         required: true
@@ -18,8 +22,8 @@ on:
         description: 'Brand'
         required: true
         type: string
-      image_url:
-        description: 'Public URL of the uploaded image'
+      image_urls:
+        description: 'Comma-separated public URLs of uploaded images'
         required: true
         type: string
 
@@ -27,25 +31,19 @@ jobs:
   publish-listing:
     runs-on: ubuntu-latest
     steps:
-      # 1. Download your index.ts and package.json into the server
       - uses: actions/checkout@v4
-      
-      # 2. Set up the Node.js environment
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          
-      # 3. Install Stagehand, Playwright, and their dependencies
       - run: npm install
       - run: npx playwright install chromium
-      
-      # 4. Run the script and pass the inputs & secrets as environment variables
       - run: npm start
         env:
           GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           VINTED_COOKIES: ${{ secrets.VINTED_COOKIES }}
           ITEM_TITLE: ${{ inputs.title }}
           ITEM_DESC: ${{ inputs.desc }}
+          ITEM_CATEGORY: ${{ inputs.category }}
           ITEM_PRICE: ${{ inputs.price }}
           ITEM_BRAND: ${{ inputs.brand }}
-          IMAGE_URL: ${{ inputs.image_url }}
+          IMAGE_URLS: ${{ inputs.image_urls }}
