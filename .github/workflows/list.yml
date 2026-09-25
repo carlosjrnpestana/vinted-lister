@@ -1,53 +1,61 @@
-name: Create Vinted Listing
+name: Publish Vinted Listing
+
 on:
   workflow_dispatch:
     inputs:
-      title:
-        description: 'Item Title'
+      ITEM_TITLE:
+        description: 'Listing Title'
         required: true
         type: string
-      desc:
-        description: 'Description'
+      ITEM_DESC:
+        description: 'Listing Description'
         required: true
         type: string
-      category:
-        description: 'Category path (e.g., Women > Clothing > Sweaters)'
+      ITEM_CATEGORY:
+        description: 'Category Path (e.g. Casa › Acessórios para a casa › Decoração de parede)'
         required: true
         type: string
-      price:
-        description: 'Price'
+      ITEM_PRICE:
+        description: 'Price in EUR'
         required: true
         type: string
-      brand:
+      ITEM_BRAND:
         description: 'Brand (Optional)'
         required: false
-        default: ''
         type: string
-      image_urls:
-        description: 'Comma-separated public URLs of uploaded images'
+      IMAGE_URLS:
+        description: 'Comma-separated Image URLs'
         required: true
         type: string
 
 jobs:
   publish-listing:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: '22'
-      - run: npm install
-      - run: npx playwright install --with-deps chromium
-      
-      # FIX: We use xvfb-run to create a virtual monitor for Stagehand
-      - run: xvfb-run --auto-servernum -- npm start
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Playwright browsers and system dependencies
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Vinted Listing Automation
         env:
-          GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           VINTED_COOKIES: ${{ secrets.VINTED_COOKIES }}
-          ITEM_TITLE: ${{ inputs.title }}
-          ITEM_DESC: ${{ inputs.desc }}
-          ITEM_CATEGORY: ${{ inputs.category }}
-          ITEM_PRICE: ${{ inputs.price }}
-          ITEM_BRAND: ${{ inputs.brand }}
-          IMAGE_URLS: ${{ inputs.image_urls }}
+          ITEM_TITLE: ${{ inputs.ITEM_TITLE }}
+          ITEM_DESC: ${{ inputs.ITEM_DESC }}
+          ITEM_CATEGORY: ${{ inputs.ITEM_CATEGORY }}
+          ITEM_PRICE: ${{ inputs.ITEM_PRICE }}
+          ITEM_BRAND: ${{ inputs.ITEM_BRAND }}
+          IMAGE_URLS: ${{ inputs.IMAGE_URLS }}
+        run: xvfb-run --auto-servernum -- npm start
