@@ -57,29 +57,37 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22.18'
 
-      - name: Install dependencies
-        run: npm install
+    - name: Install dependencies
+      run: npm install
 
-      - name: Install Playwright browsers and system dependencies
-        run: npx playwright install --with-deps chromium
-
-      - name: Run Vinted Listing Automation
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          VINTED_COOKIES: ${{ secrets.VINTED_COOKIES }}
-          ITEM_TITLE: ${{ inputs.title || inputs.ITEM_TITLE }}
-          ITEM_DESC: ${{ inputs.desc || inputs.ITEM_DESC }}
-          ITEM_CATEGORY: ${{ inputs.category || inputs.ITEM_CATEGORY }}
-          ITEM_PRICE: ${{ inputs.price || inputs.ITEM_PRICE }}
-          ITEM_BRAND: ${{ inputs.brand || inputs.ITEM_BRAND }}
-          IMAGE_URLS: ${{ inputs.image_urls || inputs.ITEM_IMAGE_URLS }}
-        run: xvfb-run --auto-servernum -- npm start
+    - name: Run Vinted Listing Automation
+      env:
+        BROWSERBASE_API_KEY: ${{ secrets.BROWSERBASE_API_KEY }}
+        # Optional BYOK — leave unset to use Browserbase Model Gateway on Free
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        GOOGLE_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        VINTED_COOKIES: ${{ secrets.VINTED_COOKIES }}
+        # Free plan has no proxies — set repo var BROWSERBASE_PROXIES=true only on paid
+        BROWSERBASE_PROXIES: ${{ vars.BROWSERBASE_PROXIES || 'false' }}
+        ITEM_TITLE: ${{ inputs.title || inputs.ITEM_TITLE }}
+        ITEM_DESC: ${{ inputs.desc || inputs.ITEM_DESC }}
+        ITEM_CATEGORY: ${{ inputs.category || inputs.ITEM_CATEGORY }}
+        ITEM_PRICE: ${{ inputs.price || inputs.ITEM_PRICE }}
+        ITEM_BRAND: ${{ inputs.brand || inputs.ITEM_BRAND }}
+        IMAGE_URLS: ${{ inputs.image_urls || inputs.ITEM_IMAGE_URLS }}
+      run: |
+        if [ -z "${BROWSERBASE_API_KEY:-}" ]; then
+          echo "BROWSERBASE_API_KEY secret is required (Stagehand v4 + Browserbase)."
+          exit 1
+        fi
+        echo "Running against Browserbase cloud browser"
+        npm start
