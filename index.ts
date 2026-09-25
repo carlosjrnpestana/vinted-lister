@@ -3,12 +3,12 @@ import fs from "fs";
 import { pipeline } from "stream/promises";
 
 async function main() {
+  // Initialize Stagehand to run in default (headful) mode on our fake virtual monitor
   const stagehand = new Stagehand({
     env: "LOCAL", 
-    headless: true, // Forces Chromium to run in the background for GitHub Actions
+    headless: false, 
     llmProvider: "google",
-    modelName: "gemini-2.5-flash",
-    apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY
+    modelName: "gemini-2.5-flash"
   });
 
   await stagehand.init();
