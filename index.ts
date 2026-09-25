@@ -2,93 +2,6 @@ import { Stagehand } from "@browserbasehq/stagehand";
 import fs from "fs";
 import { pipeline } from "stream/promises";
 
-const AUTH_COOKIE_NAMES = new Set([
-  "access_token_web",
-  "refresh_token_web",
-  "_vinted_fr_session",
-]);
-
-function normalizeCookieDomain(domain: string | undefined, domainName: string): string {
-  let clean = (domain || `.${domainName}`).trim();
-  // ".www.vinted.pt" is invalid for Playwright — use host-only "www.vinted.pt".
-  if (/^\.www\./i.test(clean)) {
-    clean = clean.slice(1);
-  }
-  if (!clean.includes(domainName) && !clean.endsWith(".com")) {
-    clean = `.${domainName}`;
-  }
-  return clean;
-}
-
-function buildCookie(
-  cookie: any,
-  domain: string,
-  value: string
-): any {
-  const cleanCookie: any = {
-    name: cookie.name,
-    value,
-    domain,
-    path: cookie.path || "/",
-    secure: typeof cookie.secure === "boolean" ? cookie.secure : true,
-    httpOnly: typeof cookie.httpOnly === "boolean" ? cookie.httpOnly : false,
-  };
-
-  if (cookie.sameSite) {
-    const val = String(cookie.sameSite).toLowerCase();
-    if (val === "lax") cleanCookie.sameSite = "Lax";
-    else if (val === "strict") cleanCookie.sameSite = "Strict";
-    else if (val === "none" || val === "no_restriction") {
-      cleanCookie.sameSite = "None";
-      cleanCookie.secure = true;
-    }
-  }
-
-  if (cookie.expirationDate) {
-    cleanCookie.expires = Math.floor(cookie.expirationDate);
-  }
-
-  return cleanCookie;
-}
-
-function sanitizeCookies(
-  rawCookies: any[],
-  domainName: string
-): { cookies: any[]; skippedEmpty: number; authPresent: string[] } {
-  const cookies: any[] = [];
-  let skippedEmpty = 0;
-  const authPresent: string[] = [];
-  const seen = new Set<string>();
-
-  const pushUnique = (c: any) => {
-    const key = `${c.name}|${c.domain}|${c.path}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-    cookies.push(c);
-  };
-
-  for (const cookie of rawCookies) {
-    const value = cookie?.value == null ? "" : String(cookie.value);
-    if (!value) {
-      skippedEmpty += 1;
-      continue;
-    }
-
-    const cleanDomain = normalizeCookieDomain(cookie.domain, domainName);
-    const primary = buildCookie(cookie, cleanDomain, value);
-    pushUnique(primary);
-
-    // Mirror auth cookies onto apex + www so Playwright sends them on www.vinted.pt.
-    if (AUTH_COOKIE_NAMES.has(String(cookie.name))) {
-      pushUnique(buildCookie(cookie, `.${domainName}`, value));
-      pushUnique(buildCookie(cookie, `www.${domainName}`, value));
-      authPresent.push(`${cookie.name}(len=${value.length},domain=${cleanDomain})`);
-    }
-  }
-
-  return { cookies, skippedEmpty, authPresent };
-}
-
 function isListingUrl(url: string): boolean {
   try {
     return new URL(url).pathname.includes("/items/new");
@@ -112,13 +25,11 @@ async function waitForListingPage(page: any, timeoutMs = 60000): Promise<string>
     if (isListingUrl(current) || isAuthWallUrl(current)) {
       return current;
     }
-
-    // session-refresh is a client-side hop — let JS run, then wait for navigation.
     if (current.includes("session-refresh")) {
       console.log(`Waiting on session-refresh: ${current}`);
       try {
         await page.waitForLoadState("networkidle", {
-          timeout: Math.min(15000, deadline - Date.now()),
+          timeout: Math.min(12000, deadline - Date.now()),
         });
       } catch {
         /* ignore */
@@ -126,29 +37,29 @@ async function waitForListingPage(page: any, timeoutMs = 60000): Promise<string>
       try {
         await page.waitForFunction(
           () => !window.location.pathname.includes("session-refresh"),
-          { timeout: Math.min(20000, deadline - Date.now()) }
+          { timeout: Math.min(15000, deadline - Date.now()) }
         );
         continue;
       } catch {
-        // Fall through and poll
+        /* poll */
       }
     }
-
-    try {
-      await page.waitForURL(
-        (url: URL) =>
-          url.pathname.includes("/items/new") ||
-          url.pathname.includes("/member/login") ||
-          url.pathname.includes("select_type") ||
-          url.pathname.includes("/register") ||
-          !url.pathname.includes("session-refresh"),
-        { timeout: Math.min(8000, Math.max(1000, deadline - Date.now())) }
-      );
-    } catch {
-      await page.waitForTimeout(1000);
-    }
+    await page.waitForTimeout(1000);
   }
   return page.url();
+}
+
+async function diagnosePage(page: any): Promise<void> {
+  try {
+    const title = await page.title();
+    const snippet = await page
+      .locator("body")
+      .innerText({ timeout: 3000 })
+      .catch(() => "");
+    console.error(`Page diagnose title="${title}" snippet=${JSON.stringify(snippet.slice(0, 400))}`);
+  } catch (err) {
+    console.error("Page diagnose failed:", err);
+  }
 }
 
 async function main() {
@@ -173,9 +84,7 @@ async function main() {
   const stagehand = new Stagehand({
     env: "LOCAL",
     modelName: "google/gemini-3.8-flash",
-    modelClientOptions: {
-      apiKey,
-    },
+    modelClientOptions: { apiKey },
     localBrowserLaunchOptions: {
       headless: false,
       locale: "pt-PT",
@@ -194,9 +103,14 @@ async function main() {
   const page = stagehand.page;
   const context = page.context();
 
-  // Locale only — do not spoof a mismatched Chrome UA (triggers Datadome).
+  // Match the header set from successful run #14 (Chrome 124 UA).
   await context.setExtraHTTPHeaders({
     "accept-language": "pt-PT,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+    "sec-ch-ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": '"Linux"',
+    "user-agent":
+      "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
   });
 
   const imageUrls = (process.env.IMAGE_URLS || "")
@@ -226,45 +140,80 @@ async function main() {
         throw new Error("VINTED_COOKIES must be a JSON array of cookie objects.");
       }
 
-      const { cookies: sanitizedCookies, skippedEmpty, authPresent } = sanitizeCookies(
-        rawCookies,
-        domainName
-      );
+      // Same sanitization as successful run #14 — keep original domains when possible.
+      const sanitizedCookies = rawCookies
+        .map((cookie: any) => {
+          const value = cookie?.value == null ? "" : String(cookie.value);
+          if (!value) return null;
+
+          let cleanDomain = cookie.domain || `.${domainName}`;
+          if (!cleanDomain.includes(domainName)) {
+            cleanDomain = `.${domainName}`;
+          }
+
+          const cleanCookie: any = {
+            name: cookie.name,
+            value,
+            domain: cleanDomain,
+            path: cookie.path || "/",
+            secure: typeof cookie.secure === "boolean" ? cookie.secure : true,
+            httpOnly: typeof cookie.httpOnly === "boolean" ? cookie.httpOnly : false,
+          };
+
+          if (cookie.sameSite) {
+            const val = String(cookie.sameSite).toLowerCase();
+            if (val === "lax") cleanCookie.sameSite = "Lax";
+            else if (val === "strict") cleanCookie.sameSite = "Strict";
+            else if (val === "none" || val === "no_restriction") cleanCookie.sameSite = "None";
+          }
+
+          if (cookie.expirationDate) {
+            cleanCookie.expires = Math.floor(cookie.expirationDate);
+          }
+
+          return cleanCookie;
+        })
+        .filter(Boolean);
+
+      const authNames = sanitizedCookies
+        .filter((c: any) =>
+          ["access_token_web", "refresh_token_web", "_vinted_fr_session"].includes(c.name)
+        )
+        .map((c: any) => `${c.name}(len=${c.value.length},domain=${c.domain})`);
 
       console.log(
-        `Cookies: kept=${sanitizedCookies.length} skippedEmpty=${skippedEmpty} auth=[${authPresent.join(", ") || "none"}]`
+        `Cookies: kept=${sanitizedCookies.length} auth=[${authNames.join(", ") || "none"}]`
       );
 
-      if (sanitizedCookies.length === 0) {
-        console.error("Error: VINTED_COOKIES contained no non-empty cookie values.");
-        exitCode = 1;
-      } else if (authPresent.length === 0) {
-        console.error(
-          "Error: No auth cookies (access_token_web / refresh_token_web / _vinted_fr_session) with values."
-        );
+      if (sanitizedCookies.length === 0 || authNames.length === 0) {
+        console.error("Error: VINTED_COOKIES missing usable auth cookie values.");
         exitCode = 1;
       } else {
-        // Inject before any navigation so the first request carries the session.
-        console.log(`Injecting ${sanitizedCookies.length} cookies before navigation...`);
-        await context.addCookies(sanitizedCookies);
+        console.log(`Injecting ${sanitizedCookies.length} cookies before first navigation...`);
+        try {
+          await context.addCookies(sanitizedCookies);
+        } catch (cookieErr) {
+          console.error("addCookies failed, retrying without invalid domains:", cookieErr);
+          // Fallback: drop leading ".www." which some Playwright builds reject.
+          const fixed = sanitizedCookies.map((c: any) => ({
+            ...c,
+            domain: String(c.domain).replace(/^\.www\./i, "www."),
+          }));
+          await context.addCookies(fixed);
+        }
 
         console.log(`Navigating to ${NEW_ITEM_URL}...`);
-        await page.goto(NEW_ITEM_URL, { waitUntil: "load", timeout: 90000 });
+        await page.goto(NEW_ITEM_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
         console.log(`Immediate URL: ${page.url()}`);
 
-        let currentUrl = await waitForListingPage(page, 60000);
+        let currentUrl = await waitForListingPage(page, 45000);
         console.log(`Settled page URL: ${currentUrl}`);
 
         if (!isListingUrl(currentUrl)) {
-          console.log("Retry: homepage warm-up + re-inject cookies...");
-          await context.clearCookies();
+          console.log("Retry once: re-inject cookies and goto /items/new...");
           await context.addCookies(sanitizedCookies);
-          await page.goto(BASE_URL, { waitUntil: "load", timeout: 90000 });
-          await page.waitForTimeout(2000);
-          await context.addCookies(sanitizedCookies);
-          await page.goto(NEW_ITEM_URL, { waitUntil: "load", timeout: 90000 });
-          console.log(`Retry immediate URL: ${page.url()}`);
-          currentUrl = await waitForListingPage(page, 60000);
+          await page.goto(NEW_ITEM_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
+          currentUrl = await waitForListingPage(page, 45000);
           console.log(`Retry settled URL: ${currentUrl}`);
         }
 
@@ -272,11 +221,13 @@ async function main() {
           console.error(
             "Authentication Error: Vinted redirected to login/register. Refresh VINTED_COOKIES or Datadome blocked the runner IP."
           );
+          await diagnosePage(page);
           exitCode = 1;
         } else if (!isListingUrl(currentUrl)) {
           console.error(
             `Navigation Error: expected ${NEW_ITEM_URL}, got ${currentUrl}. Refusing to fill the wrong page.`
           );
+          await diagnosePage(page);
           exitCode = 1;
         } else {
           console.log("On /items/new — waiting for listing form...");
@@ -286,14 +237,13 @@ async function main() {
 
           if (!fileInput) {
             console.error("Error: listing file input not found on /items/new.");
+            await diagnosePage(page);
             exitCode = 1;
           } else {
             if (downloadedPaths.length > 0) {
               console.log("Uploading images...");
               await fileInput.setInputFiles(downloadedPaths);
               await page.waitForTimeout(4000);
-            } else {
-              console.log("Warning: no IMAGE_URLS to upload.");
             }
 
             console.log("Filling listing form via AI...");
@@ -317,7 +267,13 @@ async function main() {
               await page.act({ action: `Set the brand to: ${process.env.ITEM_BRAND}` });
             }
 
-            console.log(`Listing draft complete! Final URL: ${page.url()}`);
+            const finalUrl = page.url();
+            if (!isListingUrl(finalUrl)) {
+              console.error(`Left /items/new during fill. Final URL: ${finalUrl}`);
+              exitCode = 1;
+            } else {
+              console.log(`Listing draft complete! Final URL: ${finalUrl}`);
+            }
           }
         }
       }
@@ -337,7 +293,6 @@ async function main() {
     }
   }
 
-  // Must exit after finally — early `return` inside try would skip a trailing exit check.
   if (exitCode !== 0) {
     process.exit(exitCode);
   }
