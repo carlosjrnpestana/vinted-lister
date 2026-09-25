@@ -12,7 +12,7 @@ async function main() {
     throw new Error("Missing Gemini/Google API Key environment variable.");
   }
 
-  // Ensure process environment is populated for Stagehand's internal LLM client
+  // Force set environment variables before initializing Stagehand
   process.env.GEMINI_API_KEY = apiKey;
   process.env.GOOGLE_GENERATIVE_AI_API_KEY = apiKey;
 
@@ -50,10 +50,15 @@ async function main() {
     if (process.env.VINTED_COOKIES) {
       const rawCookies = JSON.parse(process.env.VINTED_COOKIES);
       const sanitizedCookies = rawCookies.map((cookie: any) => {
+        let domain = cookie.domain || ".vinted.com";
+        if (!domain.startsWith(".")) {
+          domain = `.${domain}`;
+        }
+
         const cleanCookie: any = {
           name: cookie.name,
           value: cookie.value,
-          domain: cookie.domain || ".vinted.com",
+          domain: domain,
           path: cookie.path || "/",
         };
 
@@ -81,8 +86,9 @@ async function main() {
 
     const currentUrl = page.url();
     console.log(`Current page URL: ${currentUrl}`);
-    if (currentUrl.includes("register") || currentUrl.includes("login")) {
-      console.log("Warning: Redirected to auth screen. Session cookies may be expired or invalid.");
+    if (currentUrl.includes("register") || currentUrl.includes("select_type") || currentUrl.includes("login")) {
+      console.error("Authentication Error: Redirected to login/register page. VINTED_COOKIES are invalid or expired.");
+      return;
     }
 
     console.log("Waiting for Vinted UI to load...");
