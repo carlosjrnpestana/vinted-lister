@@ -27,29 +27,28 @@ on:
         description: 'Comma-separated Image URLs'
         required: false
         type: string
-      # Fallbacks for legacy uppercase inputs
       ITEM_TITLE:
-        description: 'Legacy Listing Title'
+        description: 'Manual Trigger: Listing Title'
         required: false
         type: string
       ITEM_DESC:
-        description: 'Legacy Listing Description'
+        description: 'Manual Trigger: Listing Description'
         required: false
         type: string
       ITEM_CATEGORY:
-        description: 'Legacy Category Path'
+        description: 'Manual Trigger: Category Path'
         required: false
         type: string
       ITEM_PRICE:
-        description: 'Legacy Price'
+        description: 'Manual Trigger: Price'
         required: false
         type: string
       ITEM_BRAND:
-        description: 'Legacy Brand'
+        description: 'Manual Trigger: Brand'
         required: false
         type: string
-      IMAGE_URLS:
-        description: 'Legacy Image URLs'
+      ITEM_IMAGE_URLS:
+        description: 'Manual Trigger: Image URLs'
         required: false
         type: string
 
@@ -82,5 +81,5 @@ jobs:
           ITEM_CATEGORY: ${{ inputs.category || inputs.ITEM_CATEGORY }}
           ITEM_PRICE: ${{ inputs.price || inputs.ITEM_PRICE }}
           ITEM_BRAND: ${{ inputs.brand || inputs.ITEM_BRAND }}
-          IMAGE_URLS: ${{ inputs.image_urls || inputs.IMAGE_URLS }}
+          IMAGE_URLS: ${{ inputs.image_urls || inputs.ITEM_IMAGE_URLS }}
         run: xvfb-run --auto-servernum -- npm start
