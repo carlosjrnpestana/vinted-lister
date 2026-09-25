@@ -3,7 +3,6 @@ import fs from "fs";
 import { pipeline } from "stream/promises";
 
 async function main() {
-  // Initialize Stagehand to run in default (headful) mode on our fake virtual monitor
   const stagehand = new Stagehand({
     env: "LOCAL", 
     headless: false, 
@@ -29,8 +28,21 @@ async function main() {
     }
 
     console.log("Injecting cookies...");
-    const cookies = JSON.parse(process.env.VINTED_COOKIES as string);
-    await page.context().addCookies(cookies);
+    const rawCookies = JSON.parse(process.env.VINTED_COOKIES as string);
+    
+    // FIX: Sanitize cookie formatting to match Playwright's strict requirements
+    const sanitizedCookies = rawCookies.map((cookie: any) => {
+      if (cookie.sameSite) {
+        const val = cookie.sameSite.toLowerCase();
+        if (val === 'lax') cookie.sameSite = 'Lax';
+        else if (val === 'strict') cookie.sameSite = 'Strict';
+        else if (val === 'none' || val === 'no_restriction') cookie.sameSite = 'None';
+        else delete cookie.sameSite; // Remove invalid values to let browser default it
+      }
+      return cookie;
+    });
+
+    await page.context().addCookies(sanitizedCookies);
 
     console.log("Navigating to Vinted...");
     await page.goto("https://www.vinted.com/items/new");
