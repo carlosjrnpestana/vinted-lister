@@ -81,18 +81,51 @@ async function main() {
   const urlObj = new URL(BASE_URL);
   const domainName = urlObj.hostname.replace(/^www\./, "");
 
+  const browserbaseApiKey = process.env.BROWSERBASE_API_KEY;
+  const browserbaseProjectId = process.env.BROWSERBASE_PROJECT_ID;
+  const useBrowserbase = Boolean(browserbaseApiKey && browserbaseProjectId);
+
+  if (useBrowserbase) {
+    console.log("Browser env: BROWSERBASE (remote + proxies)");
+  } else {
+    console.log(
+      "Browser env: LOCAL (set BROWSERBASE_API_KEY + BROWSERBASE_PROJECT_ID to use Browserbase)"
+    );
+  }
+
   const stagehand = new Stagehand({
-    env: "LOCAL",
+    env: useBrowserbase ? "BROWSERBASE" : "LOCAL",
+    apiKey: browserbaseApiKey,
+    projectId: browserbaseProjectId,
     modelName: "google/gemini-3.8-flash",
     modelClientOptions: { apiKey },
-    localBrowserLaunchOptions: {
-      headless: false,
-      locale: "pt-PT",
-      args: ["--disable-blink-features=AutomationControlled"],
-    },
+    waitForCaptchaSolves: useBrowserbase,
+    ...(useBrowserbase
+      ? {
+          browserbaseSessionCreateParams: {
+            projectId: browserbaseProjectId,
+            // Residential proxies (Browserbase paid feature) help with Datadome.
+            proxies: process.env.BROWSERBASE_PROXIES !== "false",
+            browserSettings: {
+              // Scale-plan feature; enable with BROWSERBASE_ADVANCED_STEALTH=true
+              ...(process.env.BROWSERBASE_ADVANCED_STEALTH === "true"
+                ? { advancedStealth: true }
+                : {}),
+              viewport: { width: 1280, height: 800 },
+            },
+          },
+        }
+      : {
+          localBrowserLaunchOptions: {
+            headless: false,
+            locale: "pt-PT",
+            args: ["--disable-blink-features=AutomationControlled"],
+          },
+        }),
   });
 
   await stagehand.init();
+  console.log(`Stagehand ready (env=${stagehand.env})`);
 
   if (!stagehand.llmClient) {
     throw new Error(
@@ -103,15 +136,22 @@ async function main() {
   const page = stagehand.page;
   const context = page.context();
 
-  // Match the header set from successful run #14 (Chrome 124 UA).
-  await context.setExtraHTTPHeaders({
-    "accept-language": "pt-PT,pt;q=0.9,en-US;q=0.8,en;q=0.7",
-    "sec-ch-ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
-    "sec-ch-ua-mobile": "?0",
-    "sec-ch-ua-platform": '"Linux"',
-    "user-agent":
-      "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-  });
+  // Language preference only when on Browserbase (UA is managed remotely).
+  // Keep the #14 Chrome UA spoof for LOCAL.
+  if (useBrowserbase) {
+    await context.setExtraHTTPHeaders({
+      "accept-language": "pt-PT,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+    });
+  } else {
+    await context.setExtraHTTPHeaders({
+      "accept-language": "pt-PT,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+      "sec-ch-ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+      "sec-ch-ua-mobile": "?0",
+      "sec-ch-ua-platform": '"Linux"',
+      "user-agent":
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    });
+  }
 
   const imageUrls = (process.env.IMAGE_URLS || "")
     .split(",")
