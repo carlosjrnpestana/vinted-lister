@@ -7,12 +7,12 @@ async function main() {
     env: "LOCAL", 
     headless: false, 
     llmProvider: "google",
-    modelName: "gemini-2.5-flash"
+    modelName: "gemini-2.5-flash",
+    // FIX: Restored the missing API key configuration!
+    apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY
   });
 
   await stagehand.init();
-  
-  // FIX 1: Use Stagehand's enhanced page object which contains the .act() methods
   const page = stagehand.page; 
   
   const imageUrls = (process.env.IMAGE_URLS || "").split(",").map(url => url.trim());
@@ -48,7 +48,6 @@ async function main() {
     await page.goto("https://www.vinted.com/items/new");
 
     console.log("Waiting for Vinted UI to load...");
-    // FIX 2: Wait up to 15 seconds for Vinted to actually render the file input
     const fileInput = await page.waitForSelector('input[type="file"]', { state: 'attached', timeout: 15000 }).catch(() => null);
     
     if (fileInput && downloadedPaths.length > 0) {
@@ -60,7 +59,6 @@ async function main() {
     }
 
     console.log("Filling form details via Gemini...");
-    // FIX 3: Call .act() on the page object, and pass the text inside { action: "..." }
     await page.act({ action: `Fill in the listing title with: ${process.env.ITEM_TITLE}` });
     await page.act({ action: `Fill the description box with: ${process.env.ITEM_DESC}` });
     await page.act({ action: `Enter the price as: ${process.env.ITEM_PRICE}` });
