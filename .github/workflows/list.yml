@@ -35,12 +35,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'  # Updated to fix GitHub's deprecation warning
       - run: npm install
-      - run: npx playwright install chromium
+      # Added --with-deps so Ubuntu installs the system libraries Chromium needs
+      - run: npx playwright install --with-deps chromium 
       - run: npm start
         env:
           GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }} # Added for Stagehand compatibility
           VINTED_COOKIES: ${{ secrets.VINTED_COOKIES }}
           ITEM_TITLE: ${{ inputs.title }}
           ITEM_DESC: ${{ inputs.desc }}
