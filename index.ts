@@ -15,6 +15,9 @@ async function main() {
   process.env.GEMINI_API_KEY = apiKey;
   process.env.GOOGLE_GENERATIVE_AI_API_KEY = apiKey;
 
+  // Set the regional domain according to your Vinted account
+  const BASE_URL = process.env.VINTED_DOMAIN || "https://www.vinted.pt";
+
   const stagehand = new Stagehand({
     env: "LOCAL",
     headless: false,
@@ -30,7 +33,6 @@ async function main() {
   const page = stagehand.page;
   const context = page.context();
 
-  // Set real browser headers to bypass basic headless detection
   await context.setExtraHTTPHeaders({
     "accept-language": "pt-PT,pt;q=0.9,en-US;q=0.8,en;q=0.7",
     "user-agent":
@@ -53,17 +55,23 @@ async function main() {
       downloadedPaths.push(path);
     }
 
-    console.log("Navigating to Vinted homepage to establish browser origin...");
-    await page.goto("https://www.vinted.com", { waitUntil: "domcontentloaded" });
+    console.log(`Navigating to ${BASE_URL} homepage...`);
+    await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
 
     console.log("Injecting cookies...");
     if (process.env.VINTED_COOKIES) {
       const rawCookies = JSON.parse(process.env.VINTED_COOKIES);
       const sanitizedCookies = rawCookies.map((cookie: any) => {
+        // Strip leading dot or wildcard to allow Playwright context matching
+        let domain = cookie.domain || ".vinted.pt";
+        if (domain.startsWith(".")) {
+          domain = domain.substring(1);
+        }
+
         const cleanCookie: any = {
           name: cookie.name,
           value: cookie.value,
-          domain: cookie.domain || ".vinted.com",
+          domain: domain,
           path: cookie.path || "/",
         };
 
@@ -82,14 +90,14 @@ async function main() {
       });
 
       await context.addCookies(sanitizedCookies);
-      console.log("Cookies added successfully. Reloading page context...");
+      console.log("Cookies added successfully. Reloading...");
       await page.reload({ waitUntil: "domcontentloaded" });
     } else {
       console.log("Warning: VINTED_COOKIES environment variable is missing.");
     }
 
-    console.log("Navigating to Vinted seller form...");
-    await page.goto("https://www.vinted.com/items/new", { waitUntil: "domcontentloaded" });
+    console.log(`Navigating to ${BASE_URL}/items/new...`);
+    await page.goto(`${BASE_URL}/items/new`, { waitUntil: "domcontentloaded" });
 
     const currentUrl = page.url();
     console.log(`Current page URL: ${currentUrl}`);
@@ -99,7 +107,7 @@ async function main() {
       currentUrl.includes("login")
     ) {
       console.error(
-        "Authentication Error: Redirected to login/register page. VINTED_COOKIES are invalid or expired."
+        "Authentication Error: Redirected to login/register page. VINTED_COOKIES are invalid or domain mismatched."
       );
       return;
     }
