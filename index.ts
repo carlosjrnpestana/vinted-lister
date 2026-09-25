@@ -28,6 +28,12 @@ async function main() {
 
   await stagehand.init();
   const page = stagehand.page;
+  const context = page.context();
+
+  // Set standard Chrome User-Agent to match real browser session
+  await context.setExtraHTTPHeaders({
+    "accept-language": "en-US,en;q=0.9,pt-PT;q=0.8,pt;q=0.7",
+  });
 
   const imageUrls = (process.env.IMAGE_URLS || "")
     .split(",")
@@ -45,7 +51,7 @@ async function main() {
       downloadedPaths.push(path);
     }
 
-    console.log("Initializing base domain...");
+    console.log("Navigating to Vinted homepage to establish context...");
     await page.goto("https://www.vinted.com", { waitUntil: "domcontentloaded" });
 
     console.log("Injecting cookies...");
@@ -55,7 +61,7 @@ async function main() {
         const cleanCookie: any = {
           name: cookie.name,
           value: cookie.value,
-          domain: cookie.domain || ".vinted.com",
+          domain: cookie.domain?.startsWith(".") ? cookie.domain : `.vinted.com`,
           path: cookie.path || "/",
         };
 
@@ -73,7 +79,8 @@ async function main() {
         return cleanCookie;
       });
 
-      await page.context().addCookies(sanitizedCookies);
+      await context.addCookies(sanitizedCookies);
+      await page.reload({ waitUntil: "domcontentloaded" });
     } else {
       console.log("Warning: VINTED_COOKIES environment variable is missing.");
     }
