@@ -5,9 +5,9 @@ import { pipeline } from "stream/promises";
 async function main() {
   const stagehand = new Stagehand({
     env: "LOCAL", 
-    llmProvider: "google", // Explicitly tell Stagehand to use Google, not OpenAI
+    headless: true, // Forces Chromium to run in the background for GitHub Actions
+    llmProvider: "google",
     modelName: "gemini-2.5-flash",
-    // We pass the API key explicitly here just to be safe
     apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY
   });
 
@@ -64,6 +64,7 @@ async function main() {
   } catch (error) {
     console.error("Automation error:", error);
   } finally {
+    console.log("Cleaning up files and closing browser...");
     downloadedPaths.forEach(path => {
       if (fs.existsSync(path)) fs.unlinkSync(path);
     });
