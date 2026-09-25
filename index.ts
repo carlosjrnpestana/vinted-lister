@@ -10,15 +10,45 @@ const AUTH_COOKIE_NAMES = new Set([
 
 function normalizeCookieDomain(domain: string | undefined, domainName: string): string {
   let clean = (domain || `.${domainName}`).trim();
-  // Playwright rejects odd hosts like ".www.vinted.pt"; collapse www → apex.
-  clean = clean.replace(/^\.?www\./i, ".");
+  // ".www.vinted.pt" is invalid for Playwright — use host-only "www.vinted.pt".
+  if (/^\.www\./i.test(clean)) {
+    clean = clean.slice(1);
+  }
   if (!clean.includes(domainName) && !clean.endsWith(".com")) {
     clean = `.${domainName}`;
   }
-  if (clean === domainName || clean === `www.${domainName}`) {
-    clean = `.${domainName}`;
-  }
   return clean;
+}
+
+function buildCookie(
+  cookie: any,
+  domain: string,
+  value: string
+): any {
+  const cleanCookie: any = {
+    name: cookie.name,
+    value,
+    domain,
+    path: cookie.path || "/",
+    secure: typeof cookie.secure === "boolean" ? cookie.secure : true,
+    httpOnly: typeof cookie.httpOnly === "boolean" ? cookie.httpOnly : false,
+  };
+
+  if (cookie.sameSite) {
+    const val = String(cookie.sameSite).toLowerCase();
+    if (val === "lax") cleanCookie.sameSite = "Lax";
+    else if (val === "strict") cleanCookie.sameSite = "Strict";
+    else if (val === "none" || val === "no_restriction") {
+      cleanCookie.sameSite = "None";
+      cleanCookie.secure = true;
+    }
+  }
+
+  if (cookie.expirationDate) {
+    cleanCookie.expires = Math.floor(cookie.expirationDate);
+  }
+
+  return cleanCookie;
 }
 
 function sanitizeCookies(
@@ -28,6 +58,14 @@ function sanitizeCookies(
   const cookies: any[] = [];
   let skippedEmpty = 0;
   const authPresent: string[] = [];
+  const seen = new Set<string>();
+
+  const pushUnique = (c: any) => {
+    const key = `${c.name}|${c.domain}|${c.path}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    cookies.push(c);
+  };
 
   for (const cookie of rawCookies) {
     const value = cookie?.value == null ? "" : String(cookie.value);
@@ -37,31 +75,13 @@ function sanitizeCookies(
     }
 
     const cleanDomain = normalizeCookieDomain(cookie.domain, domainName);
-    const cleanCookie: any = {
-      name: cookie.name,
-      value,
-      domain: cleanDomain,
-      path: cookie.path || "/",
-      secure: typeof cookie.secure === "boolean" ? cookie.secure : true,
-      httpOnly: typeof cookie.httpOnly === "boolean" ? cookie.httpOnly : false,
-    };
+    const primary = buildCookie(cookie, cleanDomain, value);
+    pushUnique(primary);
 
-    if (cookie.sameSite) {
-      const val = String(cookie.sameSite).toLowerCase();
-      if (val === "lax") cleanCookie.sameSite = "Lax";
-      else if (val === "strict") cleanCookie.sameSite = "Strict";
-      else if (val === "none" || val === "no_restriction") {
-        cleanCookie.sameSite = "None";
-        cleanCookie.secure = true;
-      }
-    }
-
-    if (cookie.expirationDate) {
-      cleanCookie.expires = Math.floor(cookie.expirationDate);
-    }
-
-    cookies.push(cleanCookie);
+    // Mirror auth cookies onto apex + www so Playwright sends them on www.vinted.pt.
     if (AUTH_COOKIE_NAMES.has(String(cookie.name))) {
+      pushUnique(buildCookie(cookie, `.${domainName}`, value));
+      pushUnique(buildCookie(cookie, `www.${domainName}`, value));
       authPresent.push(`${cookie.name}(len=${value.length},domain=${cleanDomain})`);
     }
   }
@@ -85,25 +105,44 @@ function isAuthWallUrl(url: string): boolean {
   );
 }
 
-async function waitForListingPage(page: any, timeoutMs = 45000): Promise<string> {
+async function waitForListingPage(page: any, timeoutMs = 60000): Promise<string> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const current = page.url();
-    if (isListingUrl(current)) {
+    if (isListingUrl(current) || isAuthWallUrl(current)) {
       return current;
     }
-    if (isAuthWallUrl(current)) {
-      return current;
+
+    // session-refresh is a client-side hop — let JS run, then wait for navigation.
+    if (current.includes("session-refresh")) {
+      console.log(`Waiting on session-refresh: ${current}`);
+      try {
+        await page.waitForLoadState("networkidle", {
+          timeout: Math.min(15000, deadline - Date.now()),
+        });
+      } catch {
+        /* ignore */
+      }
+      try {
+        await page.waitForFunction(
+          () => !window.location.pathname.includes("session-refresh"),
+          { timeout: Math.min(20000, deadline - Date.now()) }
+        );
+        continue;
+      } catch {
+        // Fall through and poll
+      }
     }
-    // session-refresh (and similar) should continue redirecting — wait for next nav
+
     try {
       await page.waitForURL(
         (url: URL) =>
           url.pathname.includes("/items/new") ||
           url.pathname.includes("/member/login") ||
           url.pathname.includes("select_type") ||
-          url.pathname.includes("/register"),
-        { timeout: Math.min(8000, deadline - Date.now()) }
+          url.pathname.includes("/register") ||
+          !url.pathname.includes("session-refresh"),
+        { timeout: Math.min(8000, Math.max(1000, deadline - Date.now())) }
       );
     } catch {
       await page.waitForTimeout(1000);
@@ -208,22 +247,37 @@ async function main() {
         // Inject before any navigation so the first request carries the session.
         console.log(`Injecting ${sanitizedCookies.length} cookies before navigation...`);
         await context.addCookies(sanitizedCookies);
+        // Also bind via url= so Playwright associates them with www.vinted.pt.
+        await context.addCookies(
+          sanitizedCookies.map((c) => ({
+            name: c.name,
+            value: c.value,
+            url: BASE_URL,
+            path: c.path || "/",
+            secure: c.secure,
+            httpOnly: c.httpOnly,
+            sameSite: c.sameSite,
+            expires: c.expires,
+          }))
+        );
 
         console.log(`Navigating to ${NEW_ITEM_URL}...`);
-        await page.goto(NEW_ITEM_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
+        await page.goto(NEW_ITEM_URL, { waitUntil: "load", timeout: 90000 });
         console.log(`Immediate URL: ${page.url()}`);
 
-        let currentUrl = await waitForListingPage(page, 45000);
+        let currentUrl = await waitForListingPage(page, 60000);
         console.log(`Settled page URL: ${currentUrl}`);
 
         if (!isListingUrl(currentUrl)) {
-          console.log("Retry: clear-site warm-up + re-inject cookies...");
-          await page.goto(BASE_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
-          await page.waitForTimeout(1000);
+          console.log("Retry: homepage warm-up + re-inject cookies...");
+          await context.clearCookies();
           await context.addCookies(sanitizedCookies);
-          await page.goto(NEW_ITEM_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
+          await page.goto(BASE_URL, { waitUntil: "load", timeout: 90000 });
+          await page.waitForTimeout(2000);
+          await context.addCookies(sanitizedCookies);
+          await page.goto(NEW_ITEM_URL, { waitUntil: "load", timeout: 90000 });
           console.log(`Retry immediate URL: ${page.url()}`);
-          currentUrl = await waitForListingPage(page, 45000);
+          currentUrl = await waitForListingPage(page, 60000);
           console.log(`Retry settled URL: ${currentUrl}`);
         }
 
