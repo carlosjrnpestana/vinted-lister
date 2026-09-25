@@ -1,25 +1,29 @@
 import { Stagehand } from "@browserbasehq/stagehand";
+import { GoogleGenAI } from "@google/genai";
 import fs from "fs";
 import { pipeline } from "stream/promises";
 
 async function main() {
   const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY;
 
+  if (!apiKey) {
+    throw new Error("Missing Gemini API Key environment variable.");
+  }
+
+  // Initialize the official Google Gen AI client
+  const ai = new GoogleGenAI({ apiKey });
+
   const stagehand = new Stagehand({
-    env: "LOCAL", 
-    headless: false, 
+    env: "LOCAL",
+    headless: false,
     llmProvider: "google",
     modelName: "gemini-2.5-flash",
-    // Fix: Supply key at root and inside modelClientOptions for Stagehand v2 compatibility
-    apiKey: apiKey,
-    modelClientOptions: {
-      apiKey: apiKey
-    }
+    llmClient: ai as any, // Explicitly provide the LLM client to Stagehand
   });
 
   await stagehand.init();
-  const page = stagehand.page; 
-  
+  const page = stagehand.page;
+
   const imageUrls = (process.env.IMAGE_URLS || "").split(",").map(url => url.trim());
   const downloadedPaths: string[] = [];
 
@@ -39,9 +43,9 @@ async function main() {
     const sanitizedCookies = rawCookies.map((cookie: any) => {
       if (cookie.sameSite) {
         const val = cookie.sameSite.toLowerCase();
-        if (val === 'lax') cookie.sameSite = 'Lax';
-        else if (val === 'strict') cookie.sameSite = 'Strict';
-        else if (val === 'none' || val === 'no_restriction') cookie.sameSite = 'None';
+        if (val === "lax") cookie.sameSite = "Lax";
+        else if (val === "strict") cookie.sameSite = "Strict";
+        else if (val === "none" || val === "no_restriction") cookie.sameSite = "None";
         else delete cookie.sameSite;
       }
       return cookie;
@@ -52,20 +56,20 @@ async function main() {
     console.log("Navigating to Vinted...");
     await page.goto("https://www.vinted.com/items/new");
 
-    // Diagnostic check: verify if Vinted redirected us to a login page
+    // Diagnostic check for login redirects
     const currentUrl = page.url();
     console.log(`Current page URL: ${currentUrl}`);
     if (currentUrl.includes("login") || currentUrl.includes("member")) {
-      console.log("Warning: Vinted redirected to login. The provided session cookies may be expired or invalid.");
+      console.log("Warning: Vinted redirected to login. Session cookies may be invalid or expired.");
     }
 
     console.log("Waiting for Vinted UI to load...");
-    const fileInput = await page.waitForSelector('input[type="file"]', { state: 'attached', timeout: 15000 }).catch(() => null);
-    
+    const fileInput = await page.waitForSelector('input[type="file"]', { state: "attached", timeout: 15000 }).catch(() => null);
+
     if (fileInput && downloadedPaths.length > 0) {
       console.log("Uploading photos via Playwright...");
       await fileInput.setInputFiles(downloadedPaths);
-      await page.waitForTimeout(5000); 
+      await page.waitForTimeout(5000);
     } else {
       console.log("Warning: No file input found on the page or no images downloaded.");
     }
