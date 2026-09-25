@@ -18,7 +18,7 @@ async function main() {
     headless: false,
     llmProvider: "google",
     modelName: "gemini-2.5-flash",
-    llmClient: ai as any, // Explicitly provide the LLM client to Stagehand
+    llmClient: ai as any,
   });
 
   await stagehand.init();
@@ -56,7 +56,6 @@ async function main() {
     console.log("Navigating to Vinted...");
     await page.goto("https://www.vinted.com/items/new");
 
-    // Diagnostic check for login redirects
     const currentUrl = page.url();
     console.log(`Current page URL: ${currentUrl}`);
     if (currentUrl.includes("login") || currentUrl.includes("member")) {
