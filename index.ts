@@ -3,11 +3,18 @@ import fs from "fs";
 import { pipeline } from "stream/promises";
 
 async function main() {
-  const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY;
+  const apiKey =
+    process.env.GEMINI_API_KEY ||
+    process.env.GOOGLE_GENERATIVE_AI_API_KEY ||
+    process.env.GOOGLE_API_KEY;
 
   if (!apiKey) {
-    throw new Error("Missing Gemini API Key environment variable.");
+    throw new Error("Missing Gemini/Google API Key environment variable.");
   }
+
+  // Ensure process environment is populated for Stagehand's internal LLM client
+  process.env.GEMINI_API_KEY = apiKey;
+  process.env.GOOGLE_GENERATIVE_AI_API_KEY = apiKey;
 
   const stagehand = new Stagehand({
     env: "LOCAL",
@@ -15,7 +22,7 @@ async function main() {
     llmProvider: "google",
     modelName: "gemini-2.5-flash",
     enableVision: false,
-    modelClientOptions: {
+    llmClientOptions: {
       apiKey: apiKey,
     },
   });
@@ -23,7 +30,9 @@ async function main() {
   await stagehand.init();
   const page = stagehand.page;
 
-  const imageUrls = (process.env.IMAGE_URLS || "").split(",").map(url => url.trim());
+  const imageUrls = (process.env.IMAGE_URLS || "")
+    .split(",")
+    .map((url) => url.trim());
   const downloadedPaths: string[] = [];
 
   try {
@@ -38,28 +47,48 @@ async function main() {
     }
 
     console.log("Injecting cookies...");
-    const rawCookies = JSON.parse(process.env.VINTED_COOKIES as string);
-    const sanitizedCookies = rawCookies.map((cookie: any) => {
-      if (cookie.sameSite) {
-        const val = cookie.sameSite.toLowerCase();
-        if (val === "lax") cookie.sameSite = "Lax";
-        else if (val === "strict") cookie.sameSite = "Strict";
-        else if (val === "none" || val === "no_restriction") cookie.sameSite = "None";
-        else delete cookie.sameSite;
-      }
-      return cookie;
-    });
+    if (process.env.VINTED_COOKIES) {
+      const rawCookies = JSON.parse(process.env.VINTED_COOKIES);
+      const sanitizedCookies = rawCookies.map((cookie: any) => {
+        const cleanCookie: any = {
+          name: cookie.name,
+          value: cookie.value,
+          domain: cookie.domain || ".vinted.com",
+          path: cookie.path || "/",
+        };
 
-    await page.context().addCookies(sanitizedCookies);
+        if (cookie.sameSite) {
+          const val = String(cookie.sameSite).toLowerCase();
+          if (val === "lax") cleanCookie.sameSite = "Lax";
+          else if (val === "strict") cleanCookie.sameSite = "Strict";
+          else if (val === "none" || val === "no_restriction") cleanCookie.sameSite = "None";
+        }
+
+        if (typeof cookie.secure === "boolean") cleanCookie.secure = cookie.secure;
+        if (typeof cookie.httpOnly === "boolean") cleanCookie.httpOnly = cookie.httpOnly;
+        if (cookie.expirationDate) cleanCookie.expires = cookie.expirationDate;
+
+        return cleanCookie;
+      });
+
+      await page.context().addCookies(sanitizedCookies);
+    } else {
+      console.log("Warning: VINTED_COOKIES environment variable is missing.");
+    }
 
     console.log("Navigating to Vinted...");
-    await page.goto("https://www.vinted.com/items/new");
+    await page.goto("https://www.vinted.com/items/new", { waitUntil: "domcontentloaded" });
 
     const currentUrl = page.url();
     console.log(`Current page URL: ${currentUrl}`);
+    if (currentUrl.includes("register") || currentUrl.includes("login")) {
+      console.log("Warning: Redirected to auth screen. Session cookies may be expired or invalid.");
+    }
 
     console.log("Waiting for Vinted UI to load...");
-    const fileInput = await page.waitForSelector('input[type="file"]', { state: "attached", timeout: 15000 }).catch(() => null);
+    const fileInput = await page
+      .waitForSelector('input[type="file"]', { state: "attached", timeout: 15000 })
+      .catch(() => null);
 
     if (fileInput && downloadedPaths.length > 0) {
       console.log("Uploading photos via Playwright...");
@@ -75,7 +104,9 @@ async function main() {
     await page.act({ action: `Enter the price as: ${process.env.ITEM_PRICE}` });
 
     console.log("Setting category path...");
-    await page.act({ action: `Click the category selector and navigate through this exact category path to select the final option: ${process.env.ITEM_CATEGORY}` });
+    await page.act({
+      action: `Click the category selector and navigate through this exact category path to select the final option: ${process.env.ITEM_CATEGORY}`,
+    });
 
     if (process.env.ITEM_BRAND && process.env.ITEM_BRAND.trim() !== "") {
       console.log(`Setting brand to: ${process.env.ITEM_BRAND}`);
@@ -85,12 +116,11 @@ async function main() {
     }
 
     console.log("Success! Listing drafted on Vinted.");
-
   } catch (error) {
     console.error("Automation error:", error);
   } finally {
     console.log("Cleaning up files and closing browser...");
-    downloadedPaths.forEach(path => {
+    downloadedPaths.forEach((path) => {
       if (fs.existsSync(path)) fs.unlinkSync(path);
     });
     await stagehand.close();
