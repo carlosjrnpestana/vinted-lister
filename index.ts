@@ -12,25 +12,36 @@ async function main() {
     throw new Error("Missing Gemini/Google API Key environment variable.");
   }
 
+  // Stagehand Google client reads GOOGLE_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY
   process.env.GEMINI_API_KEY = apiKey;
   process.env.GOOGLE_GENERATIVE_AI_API_KEY = apiKey;
+  process.env.GOOGLE_API_KEY = apiKey;
 
   const BASE_URL = process.env.VINTED_DOMAIN || "https://www.vinted.pt";
   const urlObj = new URL(BASE_URL);
   const domainName = urlObj.hostname.replace("www.", "");
 
+  // Stagehand ^1.x had no Google/Gemini models; ^2.5 maps gemini-* → google.
+  // Pass apiKey via modelClientOptions (llmClientOptions is ignored).
   const stagehand = new Stagehand({
     env: "LOCAL",
-    headless: false,
-    llmProvider: "google",
-    modelName: "gemini-2.5-flash",
-    enableVision: false,
-    llmClientOptions: {
-      apiKey: apiKey,
+    modelName: "gemini-2.0-flash",
+    modelClientOptions: {
+      apiKey,
+    },
+    localBrowserLaunchOptions: {
+      headless: false,
     },
   });
 
   await stagehand.init();
+
+  if (!stagehand.llmClient) {
+    throw new Error(
+      "Stagehand LLM client failed to initialize. Check GEMINI_API_KEY / modelName."
+    );
+  }
+
   const page = stagehand.page;
   const context = page.context();
 
@@ -48,6 +59,7 @@ async function main() {
     .split(",")
     .map((url) => url.trim());
   const downloadedPaths: string[] = [];
+  let exitCode = 0;
 
   try {
     console.log("Downloading images...");
@@ -97,6 +109,7 @@ async function main() {
       await context.addCookies(sanitizedCookies);
     } else {
       console.error("Error: VINTED_COOKIES environment variable is missing.");
+      exitCode = 1;
       return;
     }
 
@@ -115,6 +128,7 @@ async function main() {
       console.error(
         "Authentication Error: Vinted redirected to login/register. The cookies exported are expired or Datadome blocked the US datacenter runner IP."
       );
+      exitCode = 1;
       return;
     }
 
@@ -149,6 +163,7 @@ async function main() {
     console.log("Listing draft complete!");
   } catch (error) {
     console.error("Automation error:", error);
+    exitCode = 1;
   } finally {
     console.log("Cleaning up local files and closing browser...");
     downloadedPaths.forEach((path) => {
@@ -156,6 +171,13 @@ async function main() {
     });
     await stagehand.close();
   }
+
+  if (exitCode !== 0) {
+    process.exit(exitCode);
+  }
 }
 
-main();
+main().catch((error) => {
+  console.error("Fatal error:", error);
+  process.exit(1);
+});

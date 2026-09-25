@@ -75,6 +75,7 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           VINTED_COOKIES: ${{ secrets.VINTED_COOKIES }}
           ITEM_TITLE: ${{ inputs.title || inputs.ITEM_TITLE }}
           ITEM_DESC: ${{ inputs.desc || inputs.ITEM_DESC }}
