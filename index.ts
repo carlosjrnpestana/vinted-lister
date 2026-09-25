@@ -1,5 +1,4 @@
 import { Stagehand } from "@browserbasehq/stagehand";
-import { GoogleGenAI } from "@google/genai";
 import fs from "fs";
 import { pipeline } from "stream/promises";
 
@@ -10,15 +9,15 @@ async function main() {
     throw new Error("Missing Gemini API Key environment variable.");
   }
 
-  // Initialize the official Google Gen AI client
-  const ai = new GoogleGenAI({ apiKey });
-
   const stagehand = new Stagehand({
     env: "LOCAL",
     headless: false,
     llmProvider: "google",
     modelName: "gemini-2.5-flash",
-    llmClient: ai as any,
+    enableVision: false,
+    modelClientOptions: {
+      apiKey: apiKey,
+    },
   });
 
   await stagehand.init();
@@ -58,9 +57,6 @@ async function main() {
 
     const currentUrl = page.url();
     console.log(`Current page URL: ${currentUrl}`);
-    if (currentUrl.includes("login") || currentUrl.includes("member")) {
-      console.log("Warning: Vinted redirected to login. Session cookies may be invalid or expired.");
-    }
 
     console.log("Waiting for Vinted UI to load...");
     const fileInput = await page.waitForSelector('input[type="file"]', { state: "attached", timeout: 15000 }).catch(() => null);
