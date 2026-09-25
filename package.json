@@ -1,20 +1,18 @@
 {
   "name": "vinted-lister",
   "version": "1.0.0",
-  "description": "Headless Vinted publisher using Stagehand and Playwright",
+  "description": "",
   "main": "index.ts",
-  "type": "module",
   "scripts": {
     "start": "tsx index.ts"
   },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
   "dependencies": {
-    "@browserbasehq/stagehand": "^2.5.0",
-    "playwright": "latest",
-    "zod": "latest"
-  },
-  "devDependencies": {
-    "@types/node": "latest",
-    "tsx": "latest",
-    "typescript": "latest"
+    "@browserbasehq/stagehand": "^1.5.0",
+    "@google/genai": "^0.1.1",
+    "playwright": "^1.40.0",
+    "tsx": "^4.7.0"
   }
 }
