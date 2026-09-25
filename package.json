@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.ts",
   "scripts": {
-    "start": "tsx index.ts"
+    "start": "node --import tsx index.ts"
   },
   "keywords": [],
   "author": "",
@@ -14,5 +14,6 @@
     "dotenv": "^16.6.1",
     "tsx": "^4.23.15",
     "zod": "~4.4.3"
-  }
+  },
+  "type": "module"
 }
