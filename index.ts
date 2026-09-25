@@ -147,6 +147,13 @@ async function main() {
           if (!value) return null;
 
           let cleanDomain = cookie.domain || `.${domainName}`;
+          // ".www.vinted.pt" is invalid — Playwright may accept it but Chromium won't send it.
+          if (/^\.www\./i.test(cleanDomain)) {
+            cleanDomain = `.${domainName}`;
+          }
+          if (cleanDomain.toLowerCase() === `www.${domainName}`) {
+            cleanDomain = `www.${domainName}`;
+          }
           if (!cleanDomain.includes(domainName)) {
             cleanDomain = `.${domainName}`;
           }
@@ -190,18 +197,23 @@ async function main() {
         exitCode = 1;
       } else {
         console.log(`Injecting ${sanitizedCookies.length} cookies before first navigation...`);
-        try {
-          await context.addCookies(sanitizedCookies);
-        } catch (cookieErr) {
-          console.error("addCookies failed, retrying without invalid domains:", cookieErr);
-          // Fallback: drop leading ".www." which some Playwright builds reject.
-          const fixed = sanitizedCookies.map((c: any) => ({
-            ...c,
-            domain: String(c.domain).replace(/^\.www\./i, "www."),
-          }));
-          await context.addCookies(fixed);
-        }
-
+        await context.addCookies(sanitizedCookies);
+        const applied = await context.cookies(BASE_URL);
+        console.log(
+          `Browser now has ${applied.length} cookies for ${BASE_URL}: ${applied
+            .map((c: any) => c.name)
+            .sort()
+            .join(", ")}`
+        );
+        const hasAccess = applied.some((c: any) => c.name === "access_token_web");
+        const hasSession = applied.some((c: any) => c.name === "_vinted_fr_session");
+        console.log(`Auth cookie presence: access_token_web=${hasAccess} _vinted_fr_session=${hasSession}`);
+        if (!hasAccess && !hasSession) {
+          console.error(
+            "Auth cookies were not accepted by the browser context. Check cookie domains in VINTED_COOKIES."
+          );
+          exitCode = 1;
+        } else {
         console.log(`Navigating to ${NEW_ITEM_URL}...`);
         await page.goto(NEW_ITEM_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
         console.log(`Immediate URL: ${page.url()}`);
@@ -217,9 +229,16 @@ async function main() {
           console.log(`Retry settled URL: ${currentUrl}`);
         }
 
-        if (isAuthWallUrl(currentUrl)) {
+        const bodyText = await page
+          .locator("body")
+          .innerText({ timeout: 3000 })
+          .catch(() => "");
+        const looksLoggedOut =
+          /Iniciar sessão/i.test(bodyText) || /Criar conta/i.test(bodyText);
+
+        if (isAuthWallUrl(currentUrl) || looksLoggedOut) {
           console.error(
-            "Authentication Error: Vinted redirected to login/register. Refresh VINTED_COOKIES or Datadome blocked the runner IP."
+            "Authentication Error: not logged in on Vinted (login CTA visible or auth redirect). Re-export VINTED_COOKIES from a logged-in browser and update the repo secret."
           );
           await diagnosePage(page);
           exitCode = 1;
@@ -275,6 +294,7 @@ async function main() {
               console.log(`Listing draft complete! Final URL: ${finalUrl}`);
             }
           }
+        }
         }
       }
     }
