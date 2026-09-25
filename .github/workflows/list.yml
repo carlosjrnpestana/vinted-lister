@@ -3,29 +3,54 @@ name: Publish Vinted Listing
 on:
   workflow_dispatch:
     inputs:
-      ITEM_TITLE:
+      title:
         description: 'Listing Title'
-        required: true
+        required: false
         type: string
-      ITEM_DESC:
+      desc:
         description: 'Listing Description'
-        required: true
+        required: false
         type: string
-      ITEM_CATEGORY:
-        description: 'Category Path (e.g. Casa › Acessórios para a casa › Decoração de parede)'
-        required: true
+      category:
+        description: 'Category Path'
+        required: false
         type: string
-      ITEM_PRICE:
+      price:
         description: 'Price in EUR'
-        required: true
+        required: false
         type: string
-      ITEM_BRAND:
+      brand:
         description: 'Brand (Optional)'
         required: false
         type: string
-      IMAGE_URLS:
+      image_urls:
         description: 'Comma-separated Image URLs'
-        required: true
+        required: false
+        type: string
+      # Fallbacks for legacy uppercase inputs
+      ITEM_TITLE:
+        description: 'Legacy Listing Title'
+        required: false
+        type: string
+      ITEM_DESC:
+        description: 'Legacy Listing Description'
+        required: false
+        type: string
+      ITEM_CATEGORY:
+        description: 'Legacy Category Path'
+        required: false
+        type: string
+      ITEM_PRICE:
+        description: 'Legacy Price'
+        required: false
+        type: string
+      ITEM_BRAND:
+        description: 'Legacy Brand'
+        required: false
+        type: string
+      IMAGE_URLS:
+        description: 'Legacy Image URLs'
+        required: false
         type: string
 
 jobs:
@@ -52,10 +77,10 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           VINTED_COOKIES: ${{ secrets.VINTED_COOKIES }}
-          ITEM_TITLE: ${{ inputs.ITEM_TITLE }}
-          ITEM_DESC: ${{ inputs.ITEM_DESC }}
-          ITEM_CATEGORY: ${{ inputs.ITEM_CATEGORY }}
-          ITEM_PRICE: ${{ inputs.ITEM_PRICE }}
-          ITEM_BRAND: ${{ inputs.ITEM_BRAND }}
-          IMAGE_URLS: ${{ inputs.IMAGE_URLS }}
+          ITEM_TITLE: ${{ inputs.title || inputs.ITEM_TITLE }}
+          ITEM_DESC: ${{ inputs.desc || inputs.ITEM_DESC }}
+          ITEM_CATEGORY: ${{ inputs.category || inputs.ITEM_CATEGORY }}
+          ITEM_PRICE: ${{ inputs.price || inputs.ITEM_PRICE }}
+          ITEM_BRAND: ${{ inputs.brand || inputs.ITEM_BRAND }}
+          IMAGE_URLS: ${{ inputs.image_urls || inputs.IMAGE_URLS }}
         run: xvfb-run --auto-servernum -- npm start
