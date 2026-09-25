@@ -247,19 +247,6 @@ async function main() {
         // Inject before any navigation so the first request carries the session.
         console.log(`Injecting ${sanitizedCookies.length} cookies before navigation...`);
         await context.addCookies(sanitizedCookies);
-        // Also bind via url= so Playwright associates them with www.vinted.pt.
-        await context.addCookies(
-          sanitizedCookies.map((c) => ({
-            name: c.name,
-            value: c.value,
-            url: BASE_URL,
-            path: c.path || "/",
-            secure: c.secure,
-            httpOnly: c.httpOnly,
-            sameSite: c.sameSite,
-            expires: c.expires,
-          }))
-        );
 
         console.log(`Navigating to ${NEW_ITEM_URL}...`);
         await page.goto(NEW_ITEM_URL, { waitUntil: "load", timeout: 90000 });
