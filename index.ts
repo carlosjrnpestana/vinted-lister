@@ -3,13 +3,18 @@ import fs from "fs";
 import { pipeline } from "stream/promises";
 
 async function main() {
+  const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY;
+
   const stagehand = new Stagehand({
     env: "LOCAL", 
     headless: false, 
     llmProvider: "google",
     modelName: "gemini-2.5-flash",
-    // FIX: Restored the missing API key configuration!
-    apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY
+    // Fix: Supply key at root and inside modelClientOptions for Stagehand v2 compatibility
+    apiKey: apiKey,
+    modelClientOptions: {
+      apiKey: apiKey
+    }
   });
 
   await stagehand.init();
@@ -46,6 +51,13 @@ async function main() {
 
     console.log("Navigating to Vinted...");
     await page.goto("https://www.vinted.com/items/new");
+
+    // Diagnostic check: verify if Vinted redirected us to a login page
+    const currentUrl = page.url();
+    console.log(`Current page URL: ${currentUrl}`);
+    if (currentUrl.includes("login") || currentUrl.includes("member")) {
+      console.log("Warning: Vinted redirected to login. The provided session cookies may be expired or invalid.");
+    }
 
     console.log("Waiting for Vinted UI to load...");
     const fileInput = await page.waitForSelector('input[type="file"]', { state: 'attached', timeout: 15000 }).catch(() => null);
