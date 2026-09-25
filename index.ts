@@ -11,7 +11,9 @@ async function main() {
   });
 
   await stagehand.init();
-  const page = stagehand.context.pages()[0];
+  
+  // FIX 1: Use Stagehand's enhanced page object which contains the .act() methods
+  const page = stagehand.page; 
   
   const imageUrls = (process.env.IMAGE_URLS || "").split(",").map(url => url.trim());
   const downloadedPaths: string[] = [];
@@ -29,15 +31,13 @@ async function main() {
 
     console.log("Injecting cookies...");
     const rawCookies = JSON.parse(process.env.VINTED_COOKIES as string);
-    
-    // FIX: Sanitize cookie formatting to match Playwright's strict requirements
     const sanitizedCookies = rawCookies.map((cookie: any) => {
       if (cookie.sameSite) {
         const val = cookie.sameSite.toLowerCase();
         if (val === 'lax') cookie.sameSite = 'Lax';
         else if (val === 'strict') cookie.sameSite = 'Strict';
         else if (val === 'none' || val === 'no_restriction') cookie.sameSite = 'None';
-        else delete cookie.sameSite; // Remove invalid values to let browser default it
+        else delete cookie.sameSite;
       }
       return cookie;
     });
@@ -47,26 +47,30 @@ async function main() {
     console.log("Navigating to Vinted...");
     await page.goto("https://www.vinted.com/items/new");
 
-    console.log("Uploading photos via Playwright...");
-    const fileInput = await page.$('input[type="file"]');
+    console.log("Waiting for Vinted UI to load...");
+    // FIX 2: Wait up to 15 seconds for Vinted to actually render the file input
+    const fileInput = await page.waitForSelector('input[type="file"]', { state: 'attached', timeout: 15000 }).catch(() => null);
+    
     if (fileInput && downloadedPaths.length > 0) {
+      console.log("Uploading photos via Playwright...");
       await fileInput.setInputFiles(downloadedPaths);
       await page.waitForTimeout(5000); 
     } else {
-      console.log("Warning: No file input found or no images downloaded.");
+      console.log("Warning: No file input found on the page or no images downloaded.");
     }
 
     console.log("Filling form details via Gemini...");
-    await stagehand.act(`Fill in the listing title with: ${process.env.ITEM_TITLE}`);
-    await stagehand.act(`Fill the description box with: ${process.env.ITEM_DESC}`);
-    await stagehand.act(`Enter the price as: ${process.env.ITEM_PRICE}`);
+    // FIX 3: Call .act() on the page object, and pass the text inside { action: "..." }
+    await page.act({ action: `Fill in the listing title with: ${process.env.ITEM_TITLE}` });
+    await page.act({ action: `Fill the description box with: ${process.env.ITEM_DESC}` });
+    await page.act({ action: `Enter the price as: ${process.env.ITEM_PRICE}` });
 
     console.log("Setting category path...");
-    await stagehand.act(`Click the category selector and navigate through this exact category path to select the final option: ${process.env.ITEM_CATEGORY}`);
+    await page.act({ action: `Click the category selector and navigate through this exact category path to select the final option: ${process.env.ITEM_CATEGORY}` });
 
     if (process.env.ITEM_BRAND && process.env.ITEM_BRAND.trim() !== "") {
       console.log(`Setting brand to: ${process.env.ITEM_BRAND}`);
-      await stagehand.act(`Set the brand to: ${process.env.ITEM_BRAND}`);
+      await page.act({ action: `Set the brand to: ${process.env.ITEM_BRAND}` });
     } else {
       console.log("No brand provided, skipping brand field.");
     }
