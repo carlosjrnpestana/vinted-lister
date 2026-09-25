@@ -25,7 +25,9 @@ async function main() {
   // Pass apiKey via modelClientOptions (llmClientOptions is ignored).
   const stagehand = new Stagehand({
     env: "LOCAL",
-    modelName: "gemini-2.0-flash",
+    // Prefer AI SDK provider/model form so unlisted Gemini versions work.
+    // Google currently rejects gemini-2.0-flash; use gemini-3.8-flash.
+    modelName: "google/gemini-3.8-flash",
     modelClientOptions: {
       apiKey,
     },
