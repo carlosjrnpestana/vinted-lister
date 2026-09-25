@@ -12,7 +12,6 @@ async function main() {
     throw new Error("Missing Gemini/Google API Key environment variable.");
   }
 
-  // Force set environment variables before initializing Stagehand
   process.env.GEMINI_API_KEY = apiKey;
   process.env.GOOGLE_GENERATIVE_AI_API_KEY = apiKey;
 
@@ -46,19 +45,17 @@ async function main() {
       downloadedPaths.push(path);
     }
 
+    console.log("Initializing base domain...");
+    await page.goto("https://www.vinted.com", { waitUntil: "domcontentloaded" });
+
     console.log("Injecting cookies...");
     if (process.env.VINTED_COOKIES) {
       const rawCookies = JSON.parse(process.env.VINTED_COOKIES);
       const sanitizedCookies = rawCookies.map((cookie: any) => {
-        let domain = cookie.domain || ".vinted.com";
-        if (!domain.startsWith(".")) {
-          domain = `.${domain}`;
-        }
-
         const cleanCookie: any = {
           name: cookie.name,
           value: cookie.value,
-          domain: domain,
+          domain: cookie.domain || ".vinted.com",
           path: cookie.path || "/",
         };
 
@@ -81,13 +78,19 @@ async function main() {
       console.log("Warning: VINTED_COOKIES environment variable is missing.");
     }
 
-    console.log("Navigating to Vinted...");
+    console.log("Navigating to Vinted seller form...");
     await page.goto("https://www.vinted.com/items/new", { waitUntil: "domcontentloaded" });
 
     const currentUrl = page.url();
     console.log(`Current page URL: ${currentUrl}`);
-    if (currentUrl.includes("register") || currentUrl.includes("select_type") || currentUrl.includes("login")) {
-      console.error("Authentication Error: Redirected to login/register page. VINTED_COOKIES are invalid or expired.");
+    if (
+      currentUrl.includes("register") ||
+      currentUrl.includes("select_type") ||
+      currentUrl.includes("login")
+    ) {
+      console.error(
+        "Authentication Error: Redirected to login/register page. VINTED_COOKIES are invalid or expired."
+      );
       return;
     }
 
